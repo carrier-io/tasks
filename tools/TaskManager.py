@@ -8,7 +8,7 @@ import json
 from ..models.pd.task import TaskCreateModel
 from ..models.results import TaskResults
 from ..models.tasks import Task
-from tools import constants as c, api_tools, rpc_tools, data_tools, MinioClient, VaultClient, MinioClientAdmin
+from tools import constants as c, api_tools, rpc_tools, data_tools, VaultClient
 from pylon.core.tools import log
 
 
@@ -41,7 +41,7 @@ class TaskManager:
                     task_args: dict,
                     file_name: Optional[str] = None,
                     **kwargs) -> Task:
-
+        s3_settings = task_args.get('s3_settings', {})
         if isinstance(file, str):
             file = data_tools.files.File(file, file_name)
         task_id = secure_filename(str(uuid4()))
@@ -50,13 +50,18 @@ class TaskManager:
         model_data.update(dict(
             mode=self.mode,
             project_id=self.project_id,
-            zippath=f"tasks/{file.filename}",
+            zippath={
+                'integration_id': s3_settings.get('integration_id'),
+                'is_local': s3_settings.get('is_local'),
+                'bucket_name': 'tasks',
+                'file_name': file.filename
+            },
             task_id=task_id,
         ))
         log.info('model_data: %s', model_data)
         task_model = TaskCreateModel.parse_obj(model_data)
 
-        self.upload_func(bucket="tasks", f=file, project=self.project_id)
+        self.upload_func(bucket="tasks", f=file, project=self.project_id, **s3_settings)
 
         task = Task(**task_model.dict())
         task.insert()
@@ -72,6 +77,8 @@ class TaskManager:
             vault_client = VaultClient.from_project(self.project_id)
         else:
             vault_client = VaultClient()
+
+        vault_client.track_used_secrets = True
         secrets = vault_client.get_all_secrets()
 
         task_id = task_id if task_id else secrets["control_tower_id"]
@@ -85,7 +92,8 @@ class TaskManager:
         # check_task_quota(task)
         arbiter = self.get_arbiter()
         logger_stop_words = set(logger_stop_words)
-        logger_stop_words.update(secrets.values())
+        # logger_stop_words.update(secrets.values())
+
         task_kwargs = {
             "task": vault_client.unsecret(value=task_json, secrets=secrets),
             "event": vault_client.unsecret(value=event, secrets=secrets),
@@ -94,8 +102,10 @@ class TaskManager:
             "mode": self.mode,
             "token_type": 'Bearer',
             "api_version": 1,
-            "logger_stop_words": list(logger_stop_words)
         }
+        logger_stop_words.update(vault_client.used_secrets)
+        task_kwargs['logger_stop_words'] = list(logger_stop_words)
+
         task_kwargs['task']['task_result_id'] = self.create_result(task).task_result_id
         log.info('YASK KWARGS %s', task_kwargs)
 
@@ -143,3 +153,5 @@ class TaskManager:
             Task.query.filter(Task.task_id == task_id).update({Task.env_vars: task_vars})
         Task.commit()
         return True
+
+
