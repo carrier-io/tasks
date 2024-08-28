@@ -139,7 +139,7 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
         return task
 
     def run_task(self, event: list | dict, task_id: Optional[str] = None,
-                 queue_name: Optional[str] = None, logger_stop_words: Iterable = tuple(),
+                 queue_name: Optional[str] = None, logger_stop_words: Iterable = tuple(), timeout=18000,
                  **kwargs) -> dict:
         log.info('YASK run event: %s, task_id: %s, queue_name: %s', event, task_id, queue_name)
         if isinstance(event, dict):
@@ -166,9 +166,12 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
         arbiter = self.get_arbiter()
         logger_stop_words = set(logger_stop_words)
         # logger_stop_words.update(secrets.values())
-
+        env_vars = json.loads(task_json["env_vars"])
+        env_vars["timeout"] = str(timeout)
+        task_json["env_vars"] = json.dumps(env_vars)
+        _task = vault_client.unsecret(value=task_json, secrets=secrets)
         task_kwargs = {
-            "task": vault_client.unsecret(value=task_json, secrets=secrets),
+            "task": _task,
             "event": vault_client.unsecret(value=event, secrets=secrets),
             "galloper_url": vault_client.unsecret(value="{{secret.galloper_url}}", secrets=secrets),
             "token": vault_client.unsecret(value="{{secret.auth_token}}", secrets=secrets),
