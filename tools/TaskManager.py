@@ -6,10 +6,11 @@ from arbiter import Arbiter
 import json
 
 from sqlalchemy import or_, and_
+from sqlalchemy.exc import IntegrityError
 from ..models.pd.task import TaskCreateModel
 from ..models.results import TaskResults
 from ..models.tasks import Task
-from tools import constants as c, api_tools, rpc_tools, data_tools, VaultClient
+from tools import constants as c, api_tools, rpc_tools, data_tools, VaultClient, db
 from pylon.core.tools import log
 
 
@@ -189,7 +190,7 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
         arbiter.apply('execute_lambda', queue=queue_name, task_kwargs=task_kwargs)
         arbiter.close()
 
-        self.handle_usage(task_json, task_result, event[0])
+        #self.handle_usage(task_json, task_result, event[0])
 
         return {"message": "Accepted", "code": 200, "task_id": task_id}
 
