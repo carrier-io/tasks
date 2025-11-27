@@ -192,7 +192,7 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
 
         #self.handle_usage(task_json, task_result, event[0])
 
-        return {"message": "Accepted", "code": 200, "task_id": task_id}
+        return {"message": "Accepted", "code": 200, "task_id": task_id, "task_result_id": task_result.task_result_id}
 
     def handle_usage(self, task_json: dict, task_result: TaskResults, event: dict) -> None:
         # need to add this functionality to event handler
@@ -216,6 +216,7 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
         task_result.insert()
         return task_result
 
+
     @property
     def query(self):
         return Task.query.filter(
@@ -229,7 +230,21 @@ class TaskManager(TaskManagerBase, rpc_tools.RpcMixin, rpc_tools.EventManagerMix
         )
 
     def list_tasks(self) -> list:
-        return self.query.all()
+        try:
+            # Attempt to execute the query
+            return self.query.all()
+        except IntegrityError as e:
+            # Handle database integrity errors (e.g., duplicate key violations)
+            db.session.rollback()
+           # self.session.rollback()  # Roll back the session to reset its state
+            print(f"IntegrityError: {e}")
+            return []
+        except Exception as e:
+            # Handle other exceptions
+            db.session.rollback()
+            #self.session.rollback()  # Roll back the session to reset its state
+            print(f"Unexpected error: {e}")
+            return []
 
     def count_tasks(self) -> int:
         return self.query.count()
